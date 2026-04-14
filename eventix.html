@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eventix — Билеты & События</title>
+<link rel="stylesheet" href="eventix.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div
+    class="logo"
+    role="button"
+    tabindex="0"
+    onclick="showPage('home', document.querySelectorAll('.nav-btn')[0])"
+    onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); showPage('home', document.querySelectorAll('.nav-btn')[0]); }"
+    aria-label="На главный экран"
+  >event<span>ix</span></div>
+  <div class="nav-links">
+    <button class="nav-btn active" onclick="showPage('home', this)">Афиша</button>
+    <button class="nav-btn" onclick="showPage('create', this)">Создать событие</button>
+    <button class="nav-btn" onclick="showPage('tickets', this)">Мои билеты <span id="ticket-count" style="display:none;background:rgba(232,201,106,0.2);color:var(--accent);font-size:11px;padding:2px 7px;border-radius:50px;margin-left:4px"></span></button>
+  </div>
+  <div class="nav-user" id="nav-user-wrap">
+    <button class="nav-btn" type="button" id="nav-auth-entry" onclick="showPage('auth', this)">Вход</button>
+    <span id="auth-email-label" class="auth-email-label" style="display:none"></span>
+    <button class="btn-small" type="button" id="auth-logout" style="display:none" onclick="authSignOut()">Выйти</button>
+  </div>
+  <button class="nav-cta" onclick="showPage('create', document.querySelectorAll('.nav-btn')[1])">+ Добавить событие</button>
+</nav>
+
+<!-- ═══════ HOME PAGE ═══════ -->
+<div id="page-home" class="page active">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div>
+          <div class="hero-tag">Афиша рядом с вами</div>
+          <h1>События, которые<br><em>хочется</em> не пропустить</h1>
+          <p>Афиша и билеты в Supabase: войди в аккаунт, чтобы купить билет и увидеть его в «Мои билеты». Остаток мест уменьшается в базе при покупке.</p>
+          <div class="hero-actions">
+            <button class="btn-primary" onclick="scrollToEvents()">Открыть афишу</button>
+            <button class="btn-secondary" onclick="showPage('create', document.querySelectorAll('.nav-btn')[1])">Добавить своё событие</button>
+          </div>
+        </div>
+        <aside class="hero-panel">
+          <div class="hero-kpis">
+            <div class="kpi"><strong>быстро</strong><span>поиск, фильтры, обновление источника</span></div>
+            <div class="kpi"><strong>чисто</strong><span>аккуратная сетка и карточки, как в продакшене</span></div>
+            <div class="kpi"><strong>гибко</strong><span>подключение данных через API</span></div>
+          </div>
+          <small>Важно: «парсить» сайты без API обычно нельзя по правилам и юридически. Для автодобавления делаем интеграции через официальные API или через ваш сервер-агрегатор.</small>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEARCH -->
+  <section class="search-section">
+    <div class="container">
+      <div class="search-grid">
+        <div>
+          <div class="search-row">
+            <span class="search-icon" aria-hidden="true">Search</span>
+            <input type="text" class="search-input" placeholder="Поиск по названию, артисту или месту..." id="search-input" oninput="filterEvents()">
+          </div>
+          <div class="filters">
+            <div class="filter-chip active" onclick="setFilter('all', this)">Все</div>
+            <div class="filter-chip" onclick="setFilter('music', this)">Музыка</div>
+            <div class="filter-chip" onclick="setFilter('art', this)">Искусство</div>
+            <div class="filter-chip" onclick="setFilter('sport', this)">Спорт</div>
+            <div class="filter-chip" onclick="setFilter('food', this)">Гастрономия</div>
+            <div class="filter-chip" onclick="setFilter('tech', this)">Технологии</div>
+            <div class="filter-chip" onclick="setFilter('theater', this)">Театр</div>
+          </div>
+        </div>
+        <div class="source-card" aria-label="Локальная афиша">
+          <div class="source-title">
+            <h3>Ваша афиша</h3>
+            <span class="source-badge" id="source-badge">Local</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EVENTS GRID -->
+  <section class="events-section" id="events-section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-title">Ближайшие события</div>
+        <div class="subtle" id="events-count"></div>
+      </div>
+      <div class="events-grid" id="events-grid"></div>
+    </div>
+  </section>
+</div>
+
+<!-- ═══════ CREATE EVENT PAGE ═══════ -->
+<div id="page-create" class="page">
+  <div class="create-page">
+    <div class="container">
+    <div class="create-header">
+      <h1>Создать событие</h1>
+      <p>Войдите в аккаунт. Событие и типы билетов сохраняются в Supabase.</p>
+    </div>
+    <div class="create-grid">
+      <div>
+        <div class="form-card" style="margin-bottom:20px">
+          <div class="form-card-title">Основная информация</div>
+          <div class="form-group">
+            <label class="form-label">Название события *</label>
+            <input type="text" class="form-input" id="ev-title" placeholder="Например: Jazz Night at Fabrique" oninput="updatePreview()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Категория</label>
+            <select class="form-select" id="ev-category" onchange="updatePreview()">
+              <option value="music">Музыка</option>
+              <option value="art">Искусство</option>
+              <option value="sport">Спорт</option>
+              <option value="food">Гастрономия</option>
+              <option value="tech">Технологии</option>
+              <option value="theater">Театр</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Описание</label>
+            <textarea class="form-textarea" id="ev-desc" placeholder="Расскажите о программе, артистах, атмосфере..." oninput="updatePreview()"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Дата</label>
+              <input type="date" class="form-input" id="ev-date" oninput="updatePreview()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Время</label>
+              <input type="time" class="form-input" id="ev-time" value="20:00" oninput="updatePreview()">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Место проведения</label>
+            <input type="text" class="form-input" id="ev-venue" placeholder="Клуб / театр / площадка, Город" oninput="updatePreview()">
+            <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn-secondary" type="button" onclick="openPlacePicker()">Выбрать на карте</button>
+              <span style="font-size:12px;color:var(--muted)">Поиск места через OpenStreetMap и подстановка адреса.</span>
+            </div>
+            <input type="hidden" id="ev-coords" value="">
+          </div>
+        </div>
+
+        <div class="form-card" style="margin-bottom:20px">
+          <div class="form-card-title">Обложка события</div>
+          <div class="upload-zone" onclick="document.getElementById('ev-cover-file').click()">
+            <div class="upload-icon">Cover</div>
+            <div class="upload-text">Перетащите файл или <span>выберите с компьютера</span></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:6px">PNG, JPG — рекомендовано 1200×628px</div>
+          </div>
+          <input id="ev-cover-file" type="file" accept="image/*" style="display:none" />
+          <div style="margin-top:12px;display:none" id="ev-cover-preview-wrap">
+            <img id="ev-cover-preview" alt="Обложка" style="width:100%;border-radius:16px;border:1px solid rgba(238,242,255,.10);display:block;max-height:220px;object-fit:cover" />
+          </div>
+        </div>
+
+        <div class="form-card">
+          <div class="form-card-title">Билеты и цены</div>
+          <div class="ticket-tier-row">
+            <div class="tier-badge" style="background:#6dda8f"></div>
+            <input type="text" class="form-input" placeholder="Тип билета (напр. Стандарт)" style="flex:1" value="Стандарт" id="t1-name">
+            <input type="number" class="form-input" placeholder="Цена ₽" style="width:120px" value="1500" id="t1-price">
+            <input type="number" class="form-input" placeholder="Кол-во" style="width:90px" value="200" id="t1-qty">
+          </div>
+          <div class="ticket-tier-row">
+            <div class="tier-badge" style="background:var(--accent)"></div>
+            <input type="text" class="form-input" placeholder="Тип билета (напр. VIP)" style="flex:1" value="VIP" id="t2-name">
+            <input type="number" class="form-input" placeholder="Цена ₽" style="width:120px" value="3500" id="t2-price">
+            <input type="number" class="form-input" placeholder="Кол-во" style="width:90px" value="50" id="t2-qty">
+          </div>
+          <div class="ticket-tier-row">
+            <div class="tier-badge" style="background:#c4a0ff"></div>
+            <input type="text" class="form-input" placeholder="Тип билета" style="flex:1" id="t3-name">
+            <input type="number" class="form-input" placeholder="Цена ₽" style="width:120px" id="t3-price">
+            <input type="number" class="form-input" placeholder="Кол-во" style="width:90px" id="t3-qty">
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="form-card" style="position:sticky;top:88px">
+          <div class="form-card-title">Предпросмотр</div>
+          <div class="preview-card">
+            <div class="preview-cover" id="prev-cover">EVENT</div>
+            <div class="preview-body">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <span class="event-category" id="prev-cat" style="background:rgba(232,201,106,0.15);color:var(--accent)">Музыка</span>
+                <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="prev-date">— дата не указана</span>
+              </div>
+              <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600;margin-bottom:6px" id="prev-title">Название события</div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:14px" id="prev-venue">Место не указано</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid var(--border)">
+                <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:var(--accent)" id="prev-price">от ₽ —</div>
+                <div style="font-size:12px;color:var(--muted)" id="prev-seats">— мест</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:20px">
+            <div class="form-group">
+              <label class="form-label">Контакт организатора</label>
+              <input type="email" class="form-input" id="ev-email" placeholder="email@example.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Телефон</label>
+              <input type="tel" class="form-input" id="ev-phone" placeholder="+7 (000) 000-00-00">
+            </div>
+          </div>
+
+          <button class="btn-confirm" onclick="publishEvent()">Опубликовать событие</button>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<!-- PLACE PICKER MODAL -->
+<div class="modal-overlay" id="place-modal" onclick="if(event.target===this)closePlacePicker()">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Выбор места</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Введите название клуба/площадки — покажем варианты из OpenStreetMap</div>
+      </div>
+      <button class="modal-close" onclick="closePlacePicker()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="search-row" style="margin:0">
+        <span class="search-icon" aria-hidden="true">Find</span>
+        <input class="search-input" id="place-query" placeholder="Например: Stadium Live Москва" />
+        <button class="btn-small" type="button" onclick="searchPlaces()">Искать</button>
+      </div>
+      <div style="margin-top:12px" id="place-results"></div>
+      <div class="hint" style="margin-top:10px">Поиск места работает без ключей через OpenStreetMap (Nominatim).</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ AUTH (отдельная страница) ═══════ -->
+<div id="page-auth" class="page">
+  <div class="auth-page">
+    <div class="container auth-page-inner">
+      <div class="auth-head">
+        <h1>Аккаунт Eventix</h1>
+        <p class="auth-sub">Вход и регистрация через Supabase Auth. Без аккаунта билеты в «Мои билеты» не сохраняются.</p>
+        <button type="button" class="btn-secondary auth-back" onclick="showPage('home', document.querySelector('.nav-btn'))">← К афише</button>
+      </div>
+      <div class="auth-card">
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab active" id="auth-tab-login" onclick="showAuthTab('login')">Вход</button>
+          <button type="button" class="auth-tab" id="auth-tab-register" onclick="showAuthTab('register')">Регистрация</button>
+        </div>
+        <div id="panel-login" class="auth-panel active">
+          <div class="form-group">
+            <label class="form-label" for="auth-login-email">Email</label>
+            <input type="email" class="form-input" id="auth-login-email" autocomplete="username" placeholder="you@example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-login-password">Пароль</label>
+            <input type="password" class="form-input" id="auth-login-password" autocomplete="current-password" placeholder="••••••••" />
+          </div>
+          <button type="button" class="btn-confirm auth-submit" onclick="authSignIn()">Войти</button>
+        </div>
+        <div id="panel-register" class="auth-panel">
+          <div class="form-group">
+            <label class="form-label" for="auth-register-email">Email</label>
+            <input type="email" class="form-input" id="auth-register-email" autocomplete="username" placeholder="you@example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-register-password">Пароль</label>
+            <input type="password" class="form-input" id="auth-register-password" autocomplete="new-password" placeholder="не короче 6 символов" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-register-password2">Повтор пароля</label>
+            <input type="password" class="form-input" id="auth-register-password2" autocomplete="new-password" placeholder="ещё раз" />
+          </div>
+          <button type="button" class="btn-confirm auth-submit" onclick="authSignUp()">Создать аккаунт</button>
+          <p class="auth-hint muted">Если в Supabase включено подтверждение email, проверь почту после регистрации.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAP MODAL (OpenStreetMap) -->
+<div class="modal-overlay" id="map-modal" onclick="if(event.target===this)closeMapModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="map-title">Карта</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px" id="map-subtitle">—</div>
+      </div>
+      <button class="modal-close" onclick="closeMapModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="map" style="height:420px;border-radius:16px;border:1px solid rgba(238,242,255,.10);overflow:hidden"></div>
+      <div class="hint" style="margin-top:10px">Карта: OpenStreetMap. Для навигации можно скопировать координаты.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ MY TICKETS PAGE ═══════ -->
+<div id="page-tickets" class="page">
+  <div class="tickets-page">
+    <div class="container">
+    <div class="tickets-header">
+      <h1>Мои билеты</h1>
+      <p style="color:var(--muted);margin-top:8px">Билеты из базы, привязанные к твоему аккаунту</p>
+    </div>
+    <div id="tickets-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ BOOKING MODAL ═══════ -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-title">Купить билет</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px">Выберите тип и количество</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-cover" id="modal-cover" style="display:none"></div>
+      <div class="modal-event-info">
+        <div class="modal-event-emoji" id="modal-emoji">🎶</div>
+        <div>
+          <div class="modal-event-name" id="modal-event-name"></div>
+          <div class="modal-event-date" id="modal-event-date"></div>
+        </div>
+      </div>
+
+      <div style="font-size:13px;color:var(--muted);margin-bottom:10px;font-weight:500;letter-spacing:0.3px">Тип билета</div>
+      <div class="ticket-types" id="modal-ticket-types"></div>
+
+      <div class="qty-section">
+        <div class="qty-label">Количество билетов</div>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeQty(-1)">−</button>
+          <div class="qty-num" id="qty-display">1</div>
+          <button class="qty-btn" onclick="changeQty(1)">+</button>
+          <span style="font-size:13px;color:var(--muted);margin-left:6px">макс. 10</span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="form-group">
+        <label class="form-label">Имя и фамилия *</label>
+        <input type="text" class="form-input" id="buyer-name" placeholder="Иван Иванов">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input type="email" class="form-input" id="buyer-email" placeholder="ticket@example.com">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Телефон</label>
+          <input type="tel" class="form-input" id="buyer-phone" placeholder="+7 (000) 000-00-00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Промокод</label>
+          <input type="text" class="form-input" id="promo-code" placeholder="EVENTIX10">
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="summary-row"><span>Билеты</span><span id="sum-tickets">—</span></div>
+      <div class="summary-row"><span>Сервисный сбор (5%)</span><span id="sum-fee">—</span></div>
+      <div class="summary-row total"><span>Итого</span><span id="sum-total">—</span></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-confirm" onclick="confirmBooking()">Оформить билет (Supabase) →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ QR MODAL ═══════ -->
+<div class="modal-overlay" id="qr-modal" onclick="if(event.target===this)closeQrModal()">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">QR билет</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px">Покажи на входе, чтобы отсканировали</div>
+      </div>
+      <button class="modal-close" onclick="closeQrModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="qr-big-wrap">
+        <img id="qr-big-img" alt="QR билет" />
+      </div>
+      <div class="hint" id="qr-big-code" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">
+  <span class="toast-icon" aria-hidden="true">OK</span>
+  <div class="toast-text" id="toast-text">Готово!<small id="toast-sub"></small></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.js"></script>
+<!--
+  Project Settings → API:
+  • URL — Project URL
+  • Ключ — только anon / publishable (часто sb_publishable_… или длинный JWT eyJ…).
+  НЕ вставляй sb_secret_… и не service_role — это для сервера, во фронте опасно и запросы могут не работать как нужно.
+-->
+<script>
+  window.EVENTIX_SUPABASE_URL = "";
+  window.EVENTIX_SUPABASE_ANON_KEY = "";
+</script>
+<script src="eventix.js"></script>
+</body>
+</html>
